@@ -650,6 +650,9 @@ def start_streamlit_app(app_name, script_path, port):
         start_msg = f"[{datetime.now().strftime('%H:%M:%S')}] 启动 {app_name} 应用..."
         write_log_to_file(app_name, start_msg)
         
+        # 根据应用名称设置 baseUrlPath，使 Streamlit 知道自己运行在 Nginx 代理的子路径下
+        base_url_path_map = {'insight': '/streamlit/insight', 'media': '/streamlit/media', 'query': '/streamlit/query'}
+        base_url_path = base_url_path_map.get(app_name, '')
         cmd = [
             sys.executable, '-m', 'streamlit', 'run',
             script_path,
@@ -659,7 +662,8 @@ def start_streamlit_app(app_name, script_path, port):
             # '--logger.level', 'debug',  # 增加日志详细程度
             '--logger.level', 'info',
             '--server.enableCORS', 'false',
-            '--server.enableXsrfProtection', 'false'
+            '--server.enableXsrfProtection', 'false',
+            '--server.baseUrlPath', base_url_path
         ]
         
         # 设置环境变量确保UTF-8编码和减少缓冲
