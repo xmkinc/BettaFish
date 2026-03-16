@@ -15,7 +15,7 @@ import time
 import threading
 from datetime import datetime
 from queue import Queue
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from flask_socketio import SocketIO, emit
 import atexit
 import requests
@@ -658,7 +658,8 @@ def start_streamlit_app(app_name, script_path, port):
             '--browser.gatherUsageStats', 'false',
             # '--logger.level', 'debug',  # 增加日志详细程度
             '--logger.level', 'info',
-            '--server.enableCORS', 'false'
+            '--server.enableCORS', 'false',
+            '--server.enableXsrfProtection', 'false'
         ]
         
         # 设置环境变量确保UTF-8编码和减少缓冲
@@ -1149,17 +1150,54 @@ def get_forum_log_history():
     except Exception as e:
         return jsonify({'success': False, 'message': f'读取forum历史失败: {str(e)}'})
 
+@app.route('/streamlit/<app_name>/', defaults={'path': ''})
+@app.route('/streamlit/<app_name>/<path:path>')
+def streamlit_proxy(app_name, path):
+    """反向代理 Streamlit 子应用，解决 Railway 单端口限制问题"""
+    port_map = {'insight': 8501, 'media': 8502, 'query': 8503}
+    if app_name not in port_map:
+        return jsonify({'error': f'未知应用: {app_name}'}), 404
+    port = port_map[app_name]
+    qs = request.query_string.decode('utf-8')
+    target_url = f'http://localhost:{port}/{path}'
+    if qs:
+        target_url += '?' + qs
+    try:
+        excluded_headers = {'host', 'content-length', 'transfer-encoding', 'connection'}
+        forward_headers = {k: v for k, v in request.headers if k.lower() not in excluded_headers}
+        resp = requests.request(
+            method=request.method,
+            url=target_url,
+            headers=forward_headers,
+            data=request.get_data(),
+            cookies=request.cookies,
+            allow_redirects=False,
+            timeout=30,
+            stream=True
+        )
+        excluded_resp_headers = {'content-encoding', 'transfer-encoding', 'connection'}
+        response_headers = [(k, v) for k, v in resp.headers.items()
+                            if k.lower() not in excluded_resp_headers]
+        return Response(
+            stream_with_context(resp.iter_content(chunk_size=8192)),
+            status=resp.status_code,
+            headers=response_headers
+        )
+    except requests.exceptions.ConnectionError:
+        return jsonify({'error': f'{app_name} 服务尚未启动，请先在系统中启动该 Agent'}), 503
+    except Exception as e:
+        logger.error(f'Streamlit 代理错误 [{app_name}]: {e}')
+        return jsonify({'error': str(e)}), 502
+
+
 @app.route('/api/search', methods=['POST'])
 def search():
-    """统一搜索接口"""
+    """统一搜索接口 - 返回各 Agent 的代理 URL，由前端更新 iframe src 触发 Streamlit 分析"""
     data = request.get_json()
     query = data.get('query', '').strip()
     
     if not query:
         return jsonify({'success': False, 'message': '搜索查询不能为空'})
-    
-    # ForumEngine论坛已经在后台运行，会自动检测搜索活动
-    # logger.info("ForumEngine: 搜索请求已收到，论坛将自动检测日志变化")
     
     # 检查哪些应用正在运行
     check_app_status()
@@ -1168,33 +1206,21 @@ def search():
     if not running_apps:
         return jsonify({'success': False, 'message': '没有运行中的应用'})
     
-    # 向运行中的应用发送搜索请求
+    # 通过代理 URL 让前端更新 iframe src，Streamlit 通过 URL Query Params 接收查询指令
     results = {}
-    api_ports = {'insight': 8501, 'media': 8502, 'query': 8503}
+    proxy_apps = {'insight', 'media', 'query'}
+    encoded_query = requests.utils.quote(query, safe='')
     
     for app_name in running_apps:
-        try:
-            api_port = api_ports[app_name]
-            # 调用Streamlit应用的API端点
-            response = requests.post(
-                f"http://localhost:{api_port}/api/search",
-                json={'query': query},
-                timeout=10
-            )
-            if response.status_code == 200:
-                results[app_name] = response.json()
-            else:
-                results[app_name] = {'success': False, 'message': 'API调用失败'}
-        except Exception as e:
-            results[app_name] = {'success': False, 'message': str(e)}
-    
-    # 搜索完成后可以选择停止监控，或者让它继续运行以捕获后续的处理日志
-    # 这里我们让监控继续运行，用户可以通过其他接口手动停止
+        if app_name in proxy_apps:
+            proxy_url = f'/streamlit/{app_name}/?query={encoded_query}&auto_search=true'
+            results[app_name] = {'success': True, 'proxy_url': proxy_url}
     
     return jsonify({
         'success': True,
         'query': query,
-        'results': results
+        'results': results,
+        'use_proxy': True
     })
 
 

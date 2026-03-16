@@ -94,15 +94,19 @@ def main():
             st.error("请输入研究查询")
             return
 
-        # 由于强制使用DeepSeek，检查相关的API密钥
+        # 检查必要的 API 密锥
         if not settings.QUERY_ENGINE_API_KEY:
             st.error("请在您的环境变量中设置QUERY_ENGINE_API_KEY")
             return
         if not settings.TAVILY_API_KEY:
-            st.error("请在您的环境变量中设置TAVILY_API_KEY")
+            st.warning(
+                "未配置 TAVILY_API_KEY，Query Agent 需要 Tavily 进行网络搜索。\n"
+                "请到 https://www.tavily.com/ 免费申请（每月 1000 次免费额度），\n"
+                "然后在 Railway 环境变量中设置 TAVILY_API_KEY。"
+            )
             return
 
-        # 自动使用配置文件中的API密钥
+        # 自动使用配置文件中的API密锥
         engine_key = settings.QUERY_ENGINE_API_KEY
         tavily_key = settings.TAVILY_API_KEY
 

@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     DB_USER: str = Field("your_db_user", description="数据库用户名")
     DB_PASSWORD: str = Field("your_db_password", description="数据库密码")
     DB_NAME: str = Field("your_db_name", description="数据库名称")
-    DB_CHARSET: str = Field("utf8mb4", description="数据库字符集，推荐utf8mb4，兼容emoji")
+    DB_CHARSET: str = Field("", description="数据库字符集：MySQL 使用 utf8mb4（兼容emoji），PostgreSQL 无需填写")
     
     # ======================= LLM 相关 =======================
     # 我们的LLM模型API赞助商有：https://aihubmix.com/?aff=8Ds9，提供了非常全面的模型api
