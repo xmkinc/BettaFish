@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/root/.local/bin:${PATH}" \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Install system dependencies required by scientific Python stack, Playwright, Streamlit, and WeasyPrint PDF
+# Install system dependencies required by scientific Python stack, Playwright, Streamlit, WeasyPrint PDF, and Nginx
 RUN set -euo pipefail; \
     apt-get update; \
     if apt-cache show libgdk-pixbuf-2.0-0 >/dev/null 2>&1; then \
@@ -18,6 +18,7 @@ RUN set -euo pipefail; \
         GDK_PIXBUF_PKG=libgdk-pixbuf2.0-0; \
     fi; \
     apt-get install -y --no-install-recommends \
+        nginx \
         build-essential \
         curl \
         git \
@@ -73,5 +74,10 @@ RUN mkdir -p /ms-playwright logs final_reports insight_engine_streamlit_reports 
 
 EXPOSE 5000 8501 8502 8503
 
-# Default command launches the Flask orchestrator which starts Streamlit agents
-CMD ["python", "app.py"]
+# Copy Nginx config and startup script
+COPY nginx.conf /app/nginx.conf
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+# Default command: start Nginx (WebSocket proxy) + Flask
+CMD ["/app/start.sh"]
